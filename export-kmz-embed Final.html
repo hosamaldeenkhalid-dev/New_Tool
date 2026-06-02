@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Export to KMZ</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 13px; background: #fff; color: #333; overflow-x: hidden; }
+  .header { background: #1a3a2a; color: #fff; padding: 10px 14px; font-size: 13px; font-weight: 700; letter-spacing: 0.5px; display: flex; align-items: center; gap: 7px; }
+  .body { padding: 12px 14px; }
+  .status-bar { font-size: 11px; padding: 5px 8px; border-radius: 3px; margin-bottom: 12px; }
+  .status-connected { background:#eafaf1; color:#1e8449; border:1px solid #a9dfbf; }
+  .status-wait { background:#fff8e1; color:#b7770d; border:1px solid #ffe082; }
+  label.lbl { display: block; font-weight: 600; margin-bottom: 3px; color: #444; font-size: 12px; }
+  input[type=text], textarea { width: 100%; padding: 6px 8px; border: 1px solid #ccc; border-radius: 3px; font-size: 12px; margin-bottom: 10px; color: #222; font-family: inherit; }
+  textarea { resize: vertical; font-family: monospace; font-size: 11px; }
+  .btn-load { width: 100%; padding: 7px; margin-bottom: 12px; background: #eaf3ff; color: #1a4f8a; border: 1px solid #bdd4f0; border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: 600; }
+  .btn-load:hover { background: #d4e9ff; }
+  .btn-load:disabled { opacity: 0.5; cursor: not-allowed; }
+  .field-list { border: 1px solid #ccc; border-radius: 3px; max-height: 150px; overflow-y: auto; margin-bottom: 12px; background: #fafafa; }
+  .field-list-header { display: flex; gap: 6px; padding: 5px 8px; border-bottom: 1px solid #eee; background: #f0f0f0; position: sticky; top: 0; }
+  .field-list-header button { font-size: 11px; padding: 2px 8px; cursor: pointer; background: #fff; border: 1px solid #ccc; border-radius: 3px; }
+  .field-item { display: flex; align-items: center; gap: 7px; padding: 5px 10px; border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+  .field-item:hover { background: #f5f5f5; }
+  .field-item.checked { background: #eaf3ff; }
+  .field-item span { font-size: 12px; color: #333; }
+  .filter-box { padding: 6px 8px; margin-bottom: 6px; background: #f5f5f5; border: 1px solid #ddd; border-radius: 3px; font-size: 11px; font-family: monospace; color: #1a3a2a; word-break: break-all; max-height: 55px; overflow-y: auto; min-height: 28px; }
+  .btn-small { font-size: 11px; padding: 3px 10px; margin-bottom: 12px; cursor: pointer; background: #fff; border: 1px solid #ccc; border-radius: 3px; color: #555; }
+  .btn-small:hover { background: #f5f5f5; }
+  .note { font-size: 11px; color: #888; padding: 5px 8px; background: #f9f9f9; border: 1px solid #eee; border-radius: 3px; margin-bottom: 12px; }
+  .divider { border: none; border-top: 1px solid #eee; margin: 10px 0; }
+  .btn-export { width: 100%; padding: 10px; background: #1a3a2a; color: #fff; border: none; border-radius: 4px; font-size: 13px; font-weight: 700; cursor: pointer; letter-spacing: 0.4px; margin-bottom: 8px; transition: background 0.2s; }
+  .btn-export:hover:not(:disabled) { background: #24503c; }
+  .btn-export:disabled { background: #999; cursor: not-allowed; }
+  .btn-export.done { background: #1e8449; }
+  .btn-export.error-btn { background: #c0392b; }
+  .progress-wrap { width: 100%; height: 5px; background: #e0e0e0; border-radius: 3px; margin-bottom: 8px; overflow: hidden; display: none; }
+  .progress-fill { height: 100%; width: 0%; background: #1a3a2a; border-radius: 3px; transition: width 0.4s ease; }
+  .msg { padding: 8px 10px; border-radius: 3px; font-size: 12px; display: none; margin-top: 4px; line-height: 1.5; }
+  .msg.info    { background:#f0f4ff; border:1px solid #c3d3f7; color:#2471a3; }
+  .msg.success { background:#eafaf1; border:1px solid #a9dfbf; color:#1e8449; }
+  .msg.error   { background:#fdecea; border:1px solid #f5c6cb; color:#922b21; }
+  .section-title { font-size: 11px; font-weight: 700; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; margin-top: 4px; }
+  .filter-status { font-size: 11px; padding: 4px 8px; border-radius: 3px; margin-bottom: 8px; background: #fff8e1; color: #b7770d; border: 1px solid #ffe082; }
+  .filter-status.active { background: #eafaf1; color: #1e8449; border: 1px solid #a9dfbf; }
+  .auto-refresh-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 11px; color: #555; }
+</style>
+</head>
+<body>
+
+<div class="header">&#11015; Export to KMZ</div>
+
+<div class="body">
+
+  <div id="statusBar" class="status-bar status-wait">&#9675; Waiting for map connection...</div>
+
+  <div class="section-title">Layer</div>
+  <label class="lbl">Feature Layer URL</label>
+  <textarea id="layerUrl" rows="3">https://arcgis.balad.com.sa/server/rest/services/Hosted/Final_GDB_BDC_Project_Analysis/FeatureServer/1</textarea>
+  <button class="btn-load" id="btnLoad" onclick="loadFields()">&#8635; Load Fields from Layer</button>
+
+  <div id="fieldSection" style="display:none;">
+    <div class="section-title">Popup Fields</div>
+    <div class="field-list" id="fieldList">
+      <div class="field-list-header">
+        <button onclick="selectAllFields()">All</button>
+        <button onclick="selectNoFields()">None</button>
+      </div>
+      <div id="fieldItems"></div>
+    </div>
+  </div>
+
+  <div class="section-title">Active Filter from Map</div>
+  <div id="filterStatus" class="filter-status">&#9675; Not yet synced</div>
+  <div class="filter-box" id="filterBox">No filter active (all features)</div>
+
+  <div class="auto-refresh-row">
+    <input type="checkbox" id="autoRefresh" checked onchange="toggleAutoRefresh(this.checked)">
+    <label for="autoRefresh">Auto-sync filter every 3 seconds</label>
+  </div>
+  <button class="btn-small" onclick="readFilter()">&#8635; Refresh filter now</button>
+
+  <div class="section-title">Output</div>
+  <label class="lbl">File Name</label>
+  <input type="text" id="outputName" value="BDC_Assets_Export">
+  <div class="note">KML popup title is always: <strong>Assets_Id</strong></div>
+
+  <hr class="divider">
+
+  <button class="btn-export" id="btnExport" onclick="startExport()" disabled>&#11015; Load Fields First</button>
+  <div class="progress-wrap" id="progressWrap"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="msg" id="msgBox"></div>
+
+</div>
+
+<script>
+var LAYER_SERVICE_NAME = 'Final_GDB_BDC_Project_Analysis';
+var LAYER_INDEX = 1;
+var availableFields = [];
+var selectedFields  = [];
+var currentFilter   = '1=1';
+var autoRefreshTimer = null;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function escXml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+}
+function setProgress(pct) { document.getElementById('progressFill').style.width = pct + '%'; }
+function showProgress(show) { document.getElementById('progressWrap').style.display = show ? 'block' : 'none'; }
+function showMsg(text, type) { var el = document.getElementById('msgBox'); el.className = 'msg ' + type; el.innerHTML = text; el.style.display = 'block'; }
+function hideMsg() { document.getElementById('msgBox').style.display = 'none'; }
+function setBtn(state) {
+  var btn = document.getElementById('btnExport');
+  btn.className = 'btn-export';
+  if (state === 'idle')    { btn.textContent = '\u2B07 Export Filtered Features to KMZ'; btn.disabled = false; }
+  if (state === 'running') { btn.textContent = '\u23F3 Exporting...'; btn.disabled = true; }
+  if (state === 'done')    { btn.textContent = '\u2713 Export Again'; btn.className = 'btn-export done'; btn.disabled = false; }
+  if (state === 'error')   { btn.textContent = '\u21BA Try Again'; btn.className = 'btn-export error-btn'; btn.disabled = false; }
+  if (state === 'nofields'){ btn.textContent = '\u2B07 Load Fields First'; btn.disabled = true; }
+}
+
+// ── Token ─────────────────────────────────────────────────────────────────────
+async function getToken() {
+  // Method 1: ArcGIS JS API IdentityManager from parent window
+  var wins = [window, window.parent, window.top];
+  for (var i = 0; i < wins.length; i++) {
+    try {
+      var w = wins[i];
+      if (w.__esri && w.__esri.id) {
+        var cred = w.__esri.id.credentials;
+        if (cred && cred.length > 0) {
+          for (var c = 0; c < cred.length; c++) {
+            if (cred[c].token) return cred[c].token;
+          }
+        }
+      }
+    } catch(e) {}
+  }
+  // Method 2: esri require from parent
+  for (var i = 0; i < wins.length; i++) {
+    try {
+      var w = wins[i];
+      if (w.require) {
+        var token = await new Promise(function(resolve) {
+          try {
+            w.require(['esri/identity/IdentityManager'], function(IM) {
+              try {
+                var creds = IM.credentials;
+                if (creds && creds.length > 0) resolve(creds[0].token || '');
+                else resolve('');
+              } catch(e) { resolve(''); }
+            });
+          } catch(e) { resolve(''); }
+          setTimeout(function(){ resolve(''); }, 2000);
+        });
+        if (token) return token;
+      }
+    } catch(e) {}
+  }
+  return '';
+}
+
+// ── Read filter from EXB map ──────────────────────────────────────────────────
+function readFilter() {
+  var layerUrl = document.getElementById('layerUrl').value.trim().replace(/\/$/, '');
+  var found = false;
+  var newFilter = '1=1';
+
+  // Strategy 1: Walk all parent window frames looking for __jimuMapViews
+  var wins = [];
+  try { wins.push(window.parent); } catch(e) {}
+  try { if (window.top !== window.parent) wins.push(window.top); } catch(e) {}
+
+  for (var wi = 0; wi < wins.length; wi++) {
+    try {
+      var w = wins[wi];
+
+      // Try __jimuMapViews (Experience Builder internal)
+      if (w.__jimuMapViews) {
+        var views = w.__jimuMapViews;
+        Object.keys(views).forEach(function(key) {
+          if (found) return;
+          try {
+            var view = views[key];
+            if (!view || !view.view || !view.view.map) return;
+            view.view.map.layers.forEach(function(layer) {
+              if (found) return;
+              try {
+                var lUrl = (layer.url || '').replace(/\/$/, '');
+                // Match by URL or by service name
+                var isMatch = lUrl === layerUrl ||
+                  lUrl.toLowerCase().includes(LAYER_SERVICE_NAME.toLowerCase()) ||
+                  (layer.title && layer.title.toLowerCase().includes('bdc_assets')) ||
+                  (layer.title && layer.title.toLowerCase().includes('bdc assets'));
+                if (isMatch) {
+                  var def = layer.definitionExpression || '1=1';
+                  newFilter = def;
+                  found = true;
+                }
+              } catch(e) {}
+            });
+          } catch(e) {}
+        });
+      }
+
+      // Try allLayerViews on mapView directly
+      if (!found && w.document) {
+        var allViews = w.document.querySelectorAll('[data-widget-id]');
+        // also try arcgis map instances
+      }
+
+    } catch(e) {}
+  }
+
+  // Strategy 2: Look for esri map instances in parent DOM
+  if (!found) {
+    try {
+      var parentDoc = window.parent.document;
+      // Find all arcgis-map elements
+      var mapEls = parentDoc.querySelectorAll('arcgis-map, .esri-view');
+      // Try accessing via __view__ property (JSAPI internal)
+      mapEls.forEach(function(el) {
+        if (found) return;
+        try {
+          var view = el.__view__ || el.view || el._view;
+          if (view && view.map && view.map.layers) {
+            view.map.layers.forEach(function(layer) {
+              if (found) return;
+              var lUrl = (layer.url || '').replace(/\/$/, '');
+              if (lUrl.toLowerCase().includes(LAYER_SERVICE_NAME.toLowerCase()) ||
+                  (layer.title && layer.title.toLowerCase().includes('bdc'))) {
+                newFilter = layer.definitionExpression || '1=1';
+                found = true;
+              }
+            });
+          }
+        } catch(e) {}
+      });
+    } catch(e) {}
+  }
+
+  // Update UI
+  updateFilterUI(newFilter, found);
+  return newFilter;
+}
+
+function updateFilterUI(filter, found) {
+  currentFilter = filter;
+  var box = document.getElementById('filterBox');
+  var status = document.getElementById('filterStatus');
+
+  if (!found) {
+    box.textContent = filter === '1=1' ? 'No filter active (all features)' : filter;
+    status.className = 'filter-status';
+    status.textContent = '\u26A0 Could not auto-detect — using: ' + (filter === '1=1' ? 'all features' : 'manual filter');
+  } else if (filter === '1=1' || !filter) {
+    box.textContent = 'No filter active — all 401 features will export';
+    box.style.color = '#888';
+    status.className = 'filter-status';
+    status.textContent = '\u25CB Map connected — no filter applied yet';
+  } else {
+    box.textContent = filter;
+    box.style.color = '#1a3a2a';
+    status.className = 'filter-status active';
+    status.textContent = '\u25CF Filter detected from map!';
+  }
+}
+
+function toggleAutoRefresh(enabled) {
+  if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+  if (enabled) {
+    autoRefreshTimer = setInterval(function() { readFilter(); }, 3000);
+  }
+}
+
+// ── Load Fields ───────────────────────────────────────────────────────────────
+async function loadFields() {
+  var url = document.getElementById('layerUrl').value.trim();
+  if (!url) { showMsg('Please enter a layer URL.', 'error'); return; }
+  document.getElementById('btnLoad').disabled = true;
+  document.getElementById('btnLoad').textContent = 'Loading...';
+  hideMsg();
+  try {
+    var token = await getToken();
+    var params = 'f=json' + (token ? '&token=' + encodeURIComponent(token) : '');
+    var res = await fetch(url + '?' + params, { credentials: 'include' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    var data = await res.json();
+    if (data.error) throw new Error(data.error.message || 'Layer error');
+    var skipFields = ['Shape','Shape_Length','Shape_Area','GlobalID','CreationDate','EditDate','Creator','Editor','last_edited_date','created_date'];
+    availableFields = (data.fields || []).map(function(f){ return f.name; }).filter(function(n){ return !skipFields.includes(n) && n !== 'OBJECTID'; });
+    selectedFields = availableFields.slice();
+    renderFieldList();
+    document.getElementById('fieldSection').style.display = 'block';
+    setBtn('idle');
+    showMsg('\u2713 ' + availableFields.length + ' fields loaded. Ready to export.', 'success');
+    setTimeout(hideMsg, 2500);
+    // Start auto refresh after fields loaded
+    readFilter();
+    toggleAutoRefresh(document.getElementById('autoRefresh').checked);
+  } catch(e) {
+    showMsg('Could not load fields: ' + e.message, 'error');
+  }
+  document.getElementById('btnLoad').disabled = false;
+  document.getElementById('btnLoad').textContent = '\u21BB Load Fields from Layer';
+}
+
+// ── Render fields ─────────────────────────────────────────────────────────────
+function renderFieldList() {
+  var container = document.getElementById('fieldItems');
+  container.innerHTML = '';
+  availableFields.forEach(function(field) {
+    var isChecked = selectedFields.includes(field);
+    var div = document.createElement('div');
+    div.className = 'field-item' + (isChecked ? ' checked' : '');
+    div.innerHTML = '<input type="checkbox" id="chk_' + field + '"' + (isChecked ? ' checked' : '') + '><span>' + field + '</span>';
+    div.querySelector('input').addEventListener('change', function(e) {
+      if (e.target.checked) { if (!selectedFields.includes(field)) selectedFields.push(field); div.classList.add('checked'); }
+      else { selectedFields = selectedFields.filter(function(f){ return f !== field; }); div.classList.remove('checked'); }
+    });
+    container.appendChild(div);
+  });
+}
+function selectAllFields() { selectedFields = availableFields.slice(); renderFieldList(); }
+function selectNoFields()  { selectedFields = []; renderFieldList(); }
+
+// ── Build KML ─────────────────────────────────────────────────────────────────
+function buildKml(features, popupFields, layerName) {
+  var placemarks = features.map(function(f) {
+    var attrs = f.attributes || {};
+    var geom  = f.geometry;
+    var title = escXml(attrs['Assets_Id'] || attrs['ASSETS_ID'] || attrs['Asset_Id'] || 'Asset');
+    var tableRows = popupFields.map(function(fld) {
+      var val = attrs[fld];
+      if (val === null || val === undefined || val === '') return '';
+      return '<tr><td style="padding:3px 6px;border:1px solid #ccc;font-weight:bold;white-space:nowrap">' + escXml(fld) + '</td><td style="padding:3px 6px;border:1px solid #ccc">' + escXml(val) + '</td></tr>';
+    }).filter(Boolean).join('');
+    var desc = '<![CDATA[<table style="border-collapse:collapse;font-size:12px">' + tableRows + '</table>]]>';
+    var geoKml = '';
+    if (geom) {
+      if (geom.rings) {
+        var ring = geom.rings[0];
+        var coords = ring.map(function(p){ return p[0]+','+p[1]+',0'; }).join(' ');
+        geoKml = '<Polygon><outerBoundaryIs><LinearRing><tessellate>1</tessellate><coordinates>' + coords + '</coordinates></LinearRing></outerBoundaryIs></Polygon>';
+      } else if (geom.paths) {
+        var coords = geom.paths[0].map(function(p){ return p[0]+','+p[1]+',0'; }).join(' ');
+        geoKml = '<LineString><tessellate>1</tessellate><coordinates>' + coords + '</coordinates></LineString>';
+      } else if (geom.x !== undefined) {
+        geoKml = '<Point><coordinates>' + geom.x + ',' + geom.y + ',0</coordinates></Point>';
+      }
+    }
+    return '<Placemark><name>' + title + '</name><description>' + desc + '</description>' + geoKml + '</Placemark>';
+  });
+  return '<?xml version="1.0" encoding="UTF-8"?><kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>' + escXml(layerName) + '</name><Style id="poly"><PolyStyle><color>7f1a3a2a</color><outline>1</outline></PolyStyle><LineStyle><color>ff1a3a2a</color><width>2</width></LineStyle><LabelStyle><scale>1.2</scale></LabelStyle></Style>' + placemarks.join('') + '</Document></kml>';
+}
+
+// ── Query ─────────────────────────────────────────────────────────────────────
+async function queryAllFeatures(url, where, outFields, token) {
+  var all = [];
+  var offset = 0;
+  var pageSize = 1000;
+  var hasMore = true;
+  while (hasMore) {
+    var params = new URLSearchParams({ where: where || '1=1', outFields: outFields.join(','), returnGeometry: 'true', outSR: '4326', f: 'json', resultOffset: String(offset), resultRecordCount: String(pageSize) });
+    if (token) params.append('token', token);
+    var res = await fetch(url + '/query', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params.toString() });
+    if (!res.ok) throw new Error('Query failed: HTTP ' + res.status);
+    var data = await res.json();
+    if (data.error) throw new Error(data.error.message || 'Query error');
+    var feats = data.features || [];
+    all = all.concat(feats);
+    offset += feats.length;
+    hasMore = feats.length === pageSize && data.exceededTransferLimit === true;
+  }
+  return all;
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+async function startExport() {
+  if (!selectedFields.length) { showMsg('Please select at least one popup field.', 'error'); return; }
+  setBtn('running'); showProgress(true); setProgress(10);
+  showMsg('Reading map filters...', 'info');
+  try {
+    readFilter(); // get latest filter right before export
+    var url   = document.getElementById('layerUrl').value.trim();
+    var name  = document.getElementById('outputName').value.trim() || 'BDC_Export';
+    var token = await getToken();
+    setProgress(25); showMsg('Querying ' + (currentFilter === '1=1' ? 'all' : 'filtered') + ' features from Enterprise...', 'info');
+    var queryFields = Array.from(new Set(['OBJECTID','Assets_Id','Asset_Id'].concat(selectedFields)));
+    var features = await queryAllFeatures(url, currentFilter, queryFields, token);
+    if (!features.length) { setBtn('error'); showProgress(false); showMsg('No features returned. The current filter may have no results.', 'error'); return; }
+    setProgress(60); showMsg('Building KML for ' + features.length + ' features...', 'info');
+    var kml = buildKml(features, selectedFields, name);
+    setProgress(80); showMsg('Packaging KMZ...', 'info');
+    var zip = new JSZip();
+    zip.file('doc.kml', kml);
+    var blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    setProgress(95);
+    var blobUrl = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href = blobUrl; a.download = name + '.kmz';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+    setProgress(100); setBtn('done');
+    showMsg('\u2713 ' + features.length + ' features exported as <strong>' + name + '.kmz</strong>', 'success');
+  } catch(e) {
+    setBtn('error'); showProgress(false);
+    showMsg('Export failed: ' + e.message, 'error');
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+window.addEventListener('load', function() {
+  setTimeout(function() {
+    try {
+      if (window.parent && window.parent !== window) {
+        document.getElementById('statusBar').className = 'status-bar status-connected';
+        document.getElementById('statusBar').textContent = '\u25CF Running inside Experience Builder';
+      }
+    } catch(e) {}
+  }, 500);
+});
+
+window.addEventListener('message', function(event) {
+  try {
+    if (event.data && event.data.type === 'FILTER_UPDATE') {
+      updateFilterUI(event.data.filter || '1=1', true);
+    }
+  } catch(e) {}
+});
+</script>
+</body>
+</html>
