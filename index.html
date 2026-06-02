@@ -293,6 +293,23 @@ window.addEventListener('load', async function() {
 
 // ── Read filter from EXB map ──────────────────────────────────────────────────
 function readFilter() {
+  // Also try reading from jimu message/state system
+  try {
+    var wins = [window.parent, window.top];
+    for (var wi = 0; wi < wins.length; wi++) {
+      try {
+        var w = wins[wi];
+        // Try jimu store
+        if (w.__JIMU_STORE__ && w.__JIMU_STORE__.getState) {
+          var state = w.__JIMU_STORE__.getState();
+          if (state && state.mapState) {
+            // look for layer filters in map state
+          }
+        }
+      } catch(e) {}
+    }
+  } catch(e) {}
+
   var found = false;
   var newFilter = '1=1';
   var wins = [];
@@ -311,7 +328,10 @@ function readFilter() {
             view.view.map.layers.forEach(function(layer) {
               if (found) return;
               var lUrl = (layer.url || '').toLowerCase();
-              if (lUrl.includes(SVC_NAME.toLowerCase()) || lUrl.includes('bdc_assets') || (layer.title && layer.title.toLowerCase().includes('bdc'))) {
+              if (lUrl.includes(SVC_NAME.toLowerCase()) || 
+                  lUrl.includes('bdc_assets') || 
+                  lUrl.includes('featureserver/1') ||
+                  (layer.title && (layer.title.toLowerCase().includes('bdc') || layer.title.toLowerCase().includes('asset')))) {
                 newFilter = layer.definitionExpression || '1=1';
                 found = true;
               }
@@ -423,7 +443,7 @@ function esc(s) {
 function buildKml(feats, fields, name) {
   var pms = feats.map(function(f) {
     var a = f.attributes || {}, g = f.geometry;
-    var title = esc(a['Assets_Id'] || a['ASSETS_ID'] || a['Asset_Id'] || 'Asset');
+    var title = esc(a['Assets_Id'] || a['assets_id'] || a['ASSETS_ID'] || a['Asset_Id'] || a['asset_id'] || a['OBJECTID'] || a['objectid'] || 'Asset');
     var rows = fields.map(function(k) {
       var v = a[k]; if (v == null || v === '') return '';
       return '<tr><td style="padding:3px 6px;border:1px solid #ccc;font-weight:bold">' + esc(k) + '</td><td style="padding:3px 6px;border:1px solid #ccc">' + esc(v) + '</td></tr>';
@@ -444,7 +464,7 @@ function buildKml(feats, fields, name) {
 async function queryAll(url, where, fields) {
   var all = [], offset = 0, pageSize = 1000, more = true;
   while (more) {
-    var p = new URLSearchParams({ where: where||'1=1', outFields: fields.join(','), returnGeometry:'true', outSR:'4326', f:'json', resultOffset:String(offset), resultRecordCount:String(pageSize), token: token });
+    var p = new URLSearchParams({ where: where||'1=1', outFields: fields.join(','), returnIdsOnly: 'false', returnGeometry:'true', outSR:'4326', f:'json', resultOffset:String(offset), resultRecordCount:String(pageSize), token: token });
     var r = await fetch(url+'/query', { method:'POST', credentials:'include', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:p.toString() });
     if (!r.ok) throw new Error('HTTP '+r.status);
     var d = await r.json();
@@ -467,7 +487,7 @@ async function doExport() {
     var name = document.getElementById('outName').value.trim() || 'BDC_Export';
     msg('Querying ' + (curFilter==='1=1'?'all':'filtered') + ' features...', 'info');
     prog(25);
-    var qFields = Array.from(new Set(['OBJECTID','Assets_Id','Asset_Id'].concat(selFields)));
+    var qFields = Array.from(new Set(['assets_id','Assets_Id','asset_id'].concat(selFields)));
     var feats = await queryAll(url, curFilter, qFields);
     if (!feats.length) { setExportBtn('err'); showProg(false); msg('No features returned. Try clearing some filters.', 'err'); return; }
     prog(60); msg('Building KML for '+feats.length+' features...', 'info');
